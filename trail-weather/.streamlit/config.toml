@@ -1,0 +1,30 @@
+#[theme]
+# primaryColor = "#3b82f6"
+# backgroundColor = "#0e1117"
+# secondaryBackgroundColor = "#1a1f2e"
+# textColor = "#e2e8f0"
+# font = "sans serif"
+
+
+
+[theme.light]
+backgroundColor = "#ffffff"
+textColor = "#111111"
+
+[theme.dark]
+backgroundColor = "#0e1117"
+textColor = "#fafafa"
+
+[server]
+maxUploadSize = 50
+enableStaticServing = true
+enableCORS = false 
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showErrorDetails = "none"
+toolbarMode = "viewer"
+
