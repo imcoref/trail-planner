@@ -147,6 +147,8 @@ def init_session_state():
         "direction": "NOBO",
         "last_thru_params": None,
         "itinerary_manually_edited": False,
+        "spot_weather_df": None,
+        "spot_last_click": None,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -363,7 +365,7 @@ def main():
     page_options = [
         "🥾 Thru-Hike Planner",
         "📊 History Weather",
-        "🔮 Coming Soon"
+        "📍 Spot Weather"
     ]
     current_page = st.sidebar.radio(
         "Select Page",
@@ -473,7 +475,7 @@ def main():
             mm_options=mm_options,
             timezone=timezone
         )
-    elif current_page == "🔮 Coming Soon":
+    elif current_page == "� Spot Weather":
         coming_soon_page()
 
     # Footer

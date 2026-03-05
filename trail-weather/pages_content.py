@@ -48,7 +48,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     # ═══ Control Section ═══
     st.markdown(
         f'<div class="control-card">'
-        f'<h3 style="text-align: center; margin-top: 0;">I want to hike the 🪴 {selected_trail} …</h3>'
+        f'<h3 style="text-align: center; margin-top: 0;">I want to hike the {trail_meta["emoji"]} {selected_trail} …</h3>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -641,25 +641,25 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
         with col_chart1:
             temp_chart = build_temperature_chart(chart_data, temp_symbol, chart_date_label)
             if temp_chart:
-                st.plotly_chart(temp_chart, use_container_width=True)
+                st.plotly_chart(temp_chart, width="stretch")
             
             precip_chart = build_precipitation_chart(chart_data, chart_date_label, rain_unit, snow_unit)
             if precip_chart:
-                st.plotly_chart(precip_chart, use_container_width=True)
+                st.plotly_chart(precip_chart, width="stretch")
         
         with col_chart2:
             wind_chart = build_wind_chart(chart_data, chart_date_label, wind_unit)
             if wind_chart:
-                st.plotly_chart(wind_chart, use_container_width=True)
+                st.plotly_chart(wind_chart, width="stretch")
             
             sunrise_chart = build_sunrise_sunset_chart(chart_data, chart_date_label)
             if sunrise_chart:
-                st.plotly_chart(sunrise_chart, use_container_width=True)
+                st.plotly_chart(sunrise_chart, width="stretch")
         
         if selected_chart_date == "All Days":
             summary_chart = build_weather_summary_chart(weather_df)
             if summary_chart:
-                st.plotly_chart(summary_chart, use_container_width=True)
+                st.plotly_chart(summary_chart, width="stretch")
         
         # Data tables per date
         for date in dates:
@@ -699,7 +699,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
                 }
                 
                 display_df = pd.DataFrame(table_data)
-                st.dataframe(display_df, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(display_df, width='stretch', hide_index=True)
         
         # Map and Elevation Profile
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -747,7 +747,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
                 if elev_df is not None:
                     elev_chart = build_elevation_profile(elev_df, mm_df, start_mm, end_mm)
                     if elev_chart:
-                        st.plotly_chart(elev_chart, use_container_width=True)
+                        st.plotly_chart(elev_chart, width="stretch")
                 else:
                     st.info("No elevation data available")
             else:
@@ -755,7 +755,196 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
 
 
 def coming_soon_page():
-    """Page 3: Coming Soon"""
-    st.title("🚧 Coming Soon")
-    st.markdown("This feature is under development.")
-    st.info("Check back later for exciting new features!")
+    """Page 3: Spot Weather – click on a map to fetch weather for any location."""
+
+    st.title("📍 Spot Weather")
+    st.caption("Click anywhere on the map to fetch historical weather data for that location.")
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+    # ── Settings ──────────────────────────────────────────────────
+    unit_system = st.session_state.unit_system
+    is_metric = unit_system == "Metric"
+    temperature_unit = "celsius" if is_metric else "fahrenheit"
+    temp_symbol = "°C" if is_metric else "°F"
+    wind_unit = "km/h" if is_metric else "mph"
+    rain_unit = "mm" if is_metric else "in"
+    snow_unit = "cm" if is_metric else "in"
+    wind_speed_unit_api = "kmh" if is_metric else "mph"
+    date_format = "DD-MM-YYYY" if is_metric else "YYYY-MM-DD"
+
+    # ── Date inputs ───────────────────────────────────────────────
+    col_date1, col_date2, col_spacer = st.columns([1, 1, 2])
+
+    with col_date1:
+        start_date = st.date_input(
+            "📅 Start Date",
+            value=st.session_state.get("spot_start_date", Date.today()),
+            min_value=Date(1940, 1, 1),
+            max_value=Date.today(),
+            format=date_format,
+            key="spot_start_date",
+        )
+
+    # Auto-sync end date when start date changes
+    prev_start = st.session_state.get("_spot_prev_start")
+    if prev_start is not None and start_date != prev_start:
+        st.session_state.spot_end_date = start_date
+    st.session_state._spot_prev_start = start_date
+
+    with col_date2:
+        end_date = st.date_input(
+            "📅 End Date",
+            min_value=start_date,
+            max_value=Date.today(),
+            format=date_format,
+            key="spot_end_date",
+        )
+
+    if end_date < start_date:
+        end_date = start_date
+
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+    # ── Map ───────────────────────────────────────────────────────
+    st.markdown('<p class="section-header">🗺️ Click on the map</p>', unsafe_allow_html=True)
+
+    import folium
+
+    # Default center (USA mid-point) or last clicked position
+    last_click = st.session_state.get("spot_last_click")
+    center = [last_click["lat"], last_click["lng"]] if last_click else [39.5, -98.35]
+    zoom = 12 if last_click else 4
+
+    m = folium.Map(location=center, zoom_start=zoom)
+    folium.TileLayer("OpenTopoMap").add_to(m)
+    folium.TileLayer("OpenStreetMap").add_to(m)
+    folium.LayerControl().add_to(m)
+
+    # Add marker at last clicked position
+    if last_click:
+        folium.Marker(
+            location=[last_click["lat"], last_click["lng"]],
+            popup=f"📍 {last_click['lat']:.4f}, {last_click['lng']:.4f}",
+            icon=folium.Icon(color="red", icon="info-sign"),
+        ).add_to(m)
+
+    map_data = st_folium(
+        m,
+        width="100%",
+        height=500,
+        returned_objects=["last_clicked"],
+    )
+
+    # ── Process click ─────────────────────────────────────────────
+    if map_data and map_data.get("last_clicked"):
+        clicked = map_data["last_clicked"]
+        lat = clicked["lat"]
+        lng = clicked["lng"]
+
+        # Only fetch if the click location changed
+        prev = st.session_state.get("spot_last_click")
+        if prev is None or prev["lat"] != lat or prev["lng"] != lng:
+            st.session_state.spot_last_click = {"lat": lat, "lng": lng}
+            st.session_state.spot_weather_df = None  # clear old data
+            st.rerun()
+
+    # ── Show coordinates ──────────────────────────────────────────
+    if last_click:
+        st.info(f"📍 Selected position: **{last_click['lat']:.4f}°N, {last_click['lng']:.4f}°E**")
+
+        # Fetch button
+        if st.button("⚡ Load Weather", type="primary", key="spot_load_weather"):
+            with st.spinner("🌤️ Fetching weather data…"):
+                try:
+                    responses = fetch_weather(
+                        [last_click["lat"]],
+                        [last_click["lng"]],
+                        start_date,
+                        end_date,
+                        temperature_unit,
+                        "UTC",
+                        wind_speed_unit_api,
+                    )
+                    weather_df = process_weather_responses(
+                        responses,
+                        [0.0],  # dummy mile marker
+                        [last_click["lat"]],
+                        [last_click["lng"]],
+                        temp_symbol,
+                        "UTC",
+                        wind_unit,
+                        rain_unit,
+                        snow_unit,
+                    )
+                    st.session_state.spot_weather_df = weather_df
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Could not load weather data: {e}")
+    else:
+        st.info("👆 Click on the map to select a location.")
+
+    # ── Display weather results ───────────────────────────────────
+    if st.session_state.get("spot_weather_df") is not None:
+        weather_df = st.session_state.spot_weather_df
+
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">🌤️ Weather Results</p>', unsafe_allow_html=True)
+
+        temp_max_col = f"Temp Max ({temp_symbol})"
+        temp_min_col = f"Temp Min ({temp_symbol})"
+        rain_col = f"Rain ({rain_unit})"
+        snow_col = f"Snow ({snow_unit})"
+        wind_col = f"💨 Wind Max ({wind_unit})"
+        gust_col = f"💨 Gusts ({wind_unit})"
+
+        # Summary metrics
+        if len(weather_df) > 0:
+            m1, m2, m3, m4, m5 = st.columns(5)
+            with m1:
+                st.metric(f"🌡️ Max Temp", f"{weather_df[temp_max_col].max():.1f} {temp_symbol}")
+            with m2:
+                st.metric(f"🌡️ Min Temp", f"{weather_df[temp_min_col].min():.1f} {temp_symbol}")
+            with m3:
+                st.metric(f"🌧️ Total Rain", f"{weather_df[rain_col].sum():.1f} {rain_unit}")
+            with m4:
+                st.metric(f"❄️ Total Snow", f"{weather_df[snow_col].sum():.1f} {snow_unit}")
+            with m5:
+                st.metric(f"💨 Max Wind", f"{weather_df[wind_col].max():.1f} {wind_unit}")
+
+        # Charts
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            temp_chart = build_temperature_chart(weather_df, temp_symbol, None, x_col="Date")
+            if temp_chart:
+                st.plotly_chart(temp_chart, width="stretch")
+            precip_chart = build_precipitation_chart(weather_df, None, rain_unit, snow_unit, x_col="Date")
+            if precip_chart:
+                st.plotly_chart(precip_chart, width="stretch")
+        with col_c2:
+            wind_chart = build_wind_chart(weather_df, None, wind_unit, x_col="Date")
+            if wind_chart:
+                st.plotly_chart(wind_chart, width="stretch")
+            sunrise_chart = build_sunrise_sunset_chart(weather_df, None, x_col="Date")
+            if sunrise_chart:
+                st.plotly_chart(sunrise_chart, width="stretch")
+
+        # Data table
+        display_cols = {
+            "Date": "Date",
+            temp_max_col: temp_max_col,
+            temp_min_col: temp_min_col,
+            rain_col: rain_col,
+            snow_col: snow_col,
+            wind_col: wind_col,
+            gust_col: gust_col,
+            "🌅 Sunrise": "🌅 Sunrise",
+            "🌇 Sunset": "🌇 Sunset",
+            "☀️ Daylight (h)": "☀️ Daylight",
+            "Weather": "Weather",
+        }
+        show_cols = [c for c in display_cols.keys() if c in weather_df.columns]
+        st.dataframe(
+            weather_df[show_cols],
+            hide_index=True,
+            width="stretch",
+        )

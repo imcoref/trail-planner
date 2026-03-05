@@ -4,6 +4,7 @@ import os
 import gpxpy
 import pandas as pd
 from pyproj import Geod
+import numpy as np
 
 
 
@@ -32,7 +33,7 @@ def examine_file(input_file_name):
         print(track.name)
     return
 
-def convert_gpx_to_csv(input_file_name, track_names, trailname):
+def convert_gpx_to_trackpoints_csv(input_file_name, track_names, trailname):
     # Load and parse the GPX file
     gpx_file = open(input_file_name, 'r')
     gpx = gpxpy.parse(gpx_file)
@@ -51,7 +52,7 @@ def convert_gpx_to_csv(input_file_name, track_names, trailname):
                     if track.name is None:
                         track.name = trailname
                     data.append({
-                        'track_name': track.name,  # Helpful to identify which track
+                        'track_name': trailname,  # Helpful to identify which track
                         #'time': point.time,
                         'latitude': point.latitude,
                         'longitude': point.longitude,
@@ -62,7 +63,7 @@ def convert_gpx_to_csv(input_file_name, track_names, trailname):
     # Create DataFrame
     df = pd.DataFrame(data)
 
-    df.to_csv('./data/' + trailname  + '_trackpoints.csv', index=False)
+    df.to_csv('./data/' + trailname + '/' + trailname  + '_trackpoints.csv', index=False)
 
 
 def calculate_milemarkers( trailname, direction_label, interval_miles):
@@ -73,8 +74,8 @@ def calculate_milemarkers( trailname, direction_label, interval_miles):
     interval_meters = float(interval_miles) * 1609.344
     geod = Geod(ellps="WGS84")
 
-    input_csv = './data/' + trailname  + '_trackpoints.csv'
-    output_csv = './data/' + trailname + '_MM_points_list_' + direction_label + '.csv' 
+    input_csv = './data/' + trailname + '/' + trailname  + '_trackpoints.csv'
+    output_csv = './data/' + trailname + '/' + trailname + '_MM_points_list_' + direction_label + '.csv' 
 
     df_original = pd.read_csv(input_csv)
 
@@ -133,8 +134,74 @@ def calculate_milemarkers( trailname, direction_label, interval_miles):
 
     print(f"{len(out_df)} points written to {output_csv}")
     print(f"Total length of track: {total_distance / 1609.344:.2f} miles\n")
+def read_gpx_for_elevation(input_file_name):
+
+    with open(input_file_name, "r") as f:
+        gpx = gpxpy.parse(f)
+
+    lat = []
+    lon = []
+    ele = []
+
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for p in segment.points:
+                lat.append(p.latitude)
+                lon.append(p.longitude)
+                ele.append(p.elevation if p.elevation else 0)
+
+    return np.array(lat), np.array(lon), np.array(ele)
 
 
+def haversine_vector(lat, lon):
+
+    R = 6371000.0
+
+    lat1 = np.radians(lat[:-1])
+    lat2 = np.radians(lat[1:])
+
+    lon1 = np.radians(lon[:-1])
+    lon2 = np.radians(lon[1:])
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+
+    d = 2 * R * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+
+    return d
+
+
+def resample_track_for_elevation(lat, lon, ele):
+
+    STEP = 1609.344  # 1 mile in meters
+
+    seg_dist = haversine_vector(lat, lon)
+
+    cum_dist = np.concatenate(([0], np.cumsum(seg_dist)))
+
+    targets = np.arange(0, cum_dist[-1], STEP)
+
+    lat_new = np.interp(targets, cum_dist, lat)
+    lon_new = np.interp(targets, cum_dist, lon)
+    ele_new = np.interp(targets, cum_dist, ele)
+
+    df = pd.DataFrame({
+        "distance_miles": targets / 1609.344,
+        "latitude": lat_new,
+        "longitude": lon_new,
+        "elevation_m": ele_new
+    })
+
+    return df
+
+def convert_gpx_to_elevation_csv(input_file, trail_name):
+    lat, lon, ele = read_gpx_for_elevation(input_file)
+    df = resample_track_for_elevation(lat, lon, ele)
+    output_csv = f'./data/{trail_name}/{trail_name}_elevation.csv'
+    df.to_csv(output_csv, index=False)
+    print(f"Elevation data written to {output_csv}")
 
 
 
@@ -190,7 +257,8 @@ def main():
     if args.examine:
         examine_file(args.input_file)
     else:
-        convert_gpx_to_csv(args.input_file, args.batch, args.name_of_trail)
+        convert_gpx_to_trackpoints_csv(args.input_file, args.batch, args.name_of_trail)
+        convert_gpx_to_elevation_csv(args.input_file, args.name_of_trail)
 
     if args.mile_marker_file:
         calculate_milemarkers(args.name_of_trail, 'NOBO', args.mile_marker_file)

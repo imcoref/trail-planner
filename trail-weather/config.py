@@ -34,6 +34,11 @@ TRAILS = {
         "emoji": "🗻",
         "timezone": "America/Denver",
     },
+    "Rennsteig": {
+        "name": "Rennsteig",
+        "emoji": "🌳",
+        "timezone": "Europe/Berlin",
+    },
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -42,12 +47,13 @@ UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "trail_weather_uploads")
 
 def get_trail_files(trail_key: str) -> dict:
     """Return all file paths for a given trail key."""
+    trail_dir = os.path.join(DATA_DIR, trail_key)
     return {
-        "trackpoints": os.path.join(DATA_DIR, f"{trail_key}_trackpoints.csv"),
-        "mm_nobo": os.path.join(DATA_DIR, f"{trail_key}_MM_points_list_NOBO.csv"),
-        "mm_sobo": os.path.join(DATA_DIR, f"{trail_key}_MM_points_list_SOBO.csv"),
-        "emblem": os.path.join(DATA_DIR, f"{trail_key}_emblem.png"),
-        "poi": os.path.join(DATA_DIR, f"{trail_key}_POI.csv"),
+        "trackpoints": os.path.join(trail_dir, f"{trail_key}_trackpoints.csv"),
+        "mm_nobo": os.path.join(trail_dir, f"{trail_key}_MM_points_list_NOBO.csv"),
+        "mm_sobo": os.path.join(trail_dir, f"{trail_key}_MM_points_list_SOBO.csv"),
+        "emblem": os.path.join(trail_dir, f"{trail_key}_emblem.png"),
+        "poi": os.path.join(trail_dir, f"{trail_key}_POI.csv"),
     }
 
 

@@ -20,7 +20,7 @@ def load_elevation_profile(trail_key: str) -> pd.DataFrame | None:
     """Load pre-computed elevation profile for a trail.
     Returns DataFrame with: distance_miles, latitude, longitude, elevation_m
     """
-    path = os.path.join(DATA_DIR, f"{trail_key}_elevation.csv")
+    path = os.path.join(DATA_DIR, trail_key, f"{trail_key}_elevation.csv")
     if not os.path.isfile(path):
         return None
     return pd.read_csv(path)
@@ -40,7 +40,7 @@ def get_segment_elevation_stats(trail_key: str, direction: str) -> pd.DataFrame 
     if elev_profile is None:
         return None
 
-    mm_file = os.path.join(DATA_DIR, f"{trail_key}_MM_points_list_{direction}.csv")
+    mm_file = os.path.join(DATA_DIR, trail_key, f"{trail_key}_MM_points_list_{direction}.csv")
     if not os.path.isfile(mm_file):
         return None
     mm_df = pd.read_csv(mm_file)
