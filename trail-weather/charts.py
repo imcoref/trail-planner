@@ -31,8 +31,8 @@ def _dark_layout(**kwargs):
     return base
 
 
-def build_temperature_chart(df, temp_symbol, selected_date=None):
-    """Temperature range chart across mile markers."""
+def build_temperature_chart(df, temp_symbol, selected_date=None, x_col="Mile Marker"):
+    """Temperature range chart across mile markers or dates."""
     day_df = df[df["Date"] == selected_date].copy() if selected_date else df.copy()
     if day_df.empty:
         return None
@@ -42,12 +42,12 @@ def build_temperature_chart(df, temp_symbol, selected_date=None):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=day_df["Mile Marker"], y=day_df[temp_max_col],
+        x=day_df[x_col], y=day_df[temp_max_col],
         mode="lines+markers", name=f"Max {temp_symbol}",
         line=dict(color="#ef4444", width=2), marker=dict(size=5),
     ))
     fig.add_trace(go.Scatter(
-        x=day_df["Mile Marker"], y=day_df[temp_min_col],
+        x=day_df[x_col], y=day_df[temp_min_col],
         mode="lines+markers", name=f"Min {temp_symbol}",
         line=dict(color="#3b82f6", width=2), marker=dict(size=5),
         fill="tonexty", fillcolor="rgba(59,130,246,0.15)",
@@ -56,8 +56,9 @@ def build_temperature_chart(df, temp_symbol, selected_date=None):
     title = "🌡️ Temperature"
     if selected_date:
         title += f" — {selected_date}"
+    x_title = "Date" if x_col == "Date" else "Mile Marker"
     fig.update_layout(**_dark_layout(
-        title=title, xaxis_title="Mile Marker",
+        title=title, xaxis_title=x_title,
         yaxis_title=f"Temperature ({temp_symbol})", height=320,
     ))
     fig.update_xaxes(gridcolor=GRID_COLOR)
@@ -65,8 +66,8 @@ def build_temperature_chart(df, temp_symbol, selected_date=None):
     return fig
 
 
-def build_precipitation_chart(df, selected_date=None, rain_unit="mm", snow_unit="cm"):
-    """Precipitation chart (rain + snow) across mile markers."""
+def build_precipitation_chart(df, selected_date=None, rain_unit="mm", snow_unit="cm", x_col="Mile Marker"):
+    """Precipitation chart (rain + snow) across mile markers or dates."""
     day_df = df[df["Date"] == selected_date].copy() if selected_date else df.copy()
     if day_df.empty:
         return None
@@ -79,26 +80,27 @@ def build_precipitation_chart(df, selected_date=None, rain_unit="mm", snow_unit=
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(go.Bar(
-        x=day_df["Mile Marker"], y=day_df[rain_col],
+        x=day_df[x_col], y=day_df[rain_col],
         name="🌧️ Rain", marker_color="#3b82f6", opacity=0.8,
     ), secondary_y=False)
     fig.add_trace(go.Bar(
-        x=day_df["Mile Marker"], y=day_df[snow_col],
+        x=day_df[x_col], y=day_df[snow_col],
         name="❄️ Snow", marker_color="#93c5fd", opacity=0.8,
     ), secondary_y=True)
 
     title = "🌧️ Precipitation"
     if selected_date:
         title += f" — {selected_date}"
-    fig.update_layout(**_dark_layout(title=title, xaxis_title="Mile Marker", height=300, barmode="group"))
+    x_title = "Date" if x_col == "Date" else "Mile Marker"
+    fig.update_layout(**_dark_layout(title=title, xaxis_title=x_title, height=300, barmode="group"))
     fig.update_yaxes(title_text=f"Rain ({rain_unit})", secondary_y=False, gridcolor=GRID_COLOR)
     fig.update_yaxes(title_text=f"Snow ({snow_unit})", secondary_y=True, gridcolor=GRID_COLOR)
     fig.update_xaxes(gridcolor=GRID_COLOR)
     return fig
 
 
-def build_wind_chart(df, selected_date=None, wind_unit="km/h"):
-    """Wind speed and gust chart across mile markers."""
+def build_wind_chart(df, selected_date=None, wind_unit="km/h", x_col="Mile Marker"):
+    """Wind speed and gust chart across mile markers or dates."""
     day_df = df[df["Date"] == selected_date].copy() if selected_date else df.copy()
     if day_df.empty:
         return None
@@ -110,13 +112,13 @@ def build_wind_chart(df, selected_date=None, wind_unit="km/h"):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=day_df["Mile Marker"], y=day_df[gust_col],
+        x=day_df[x_col], y=day_df[gust_col],
         mode="lines+markers", name="Gusts",
         line=dict(color="#f97316", width=2, dash="dot"), marker=dict(size=4),
         fill="tozeroy", fillcolor="rgba(249,115,22,0.1)",
     ))
     fig.add_trace(go.Scatter(
-        x=day_df["Mile Marker"], y=day_df[wind_col],
+        x=day_df[x_col], y=day_df[wind_col],
         mode="lines+markers", name="Max Wind",
         line=dict(color="#22c55e", width=2), marker=dict(size=5),
     ))
@@ -129,8 +131,9 @@ def build_wind_chart(df, selected_date=None, wind_unit="km/h"):
     title = "💨 Wind Speed"
     if selected_date:
         title += f" — {selected_date}"
+    x_title = "Date" if x_col == "Date" else "Mile Marker"
     fig.update_layout(**_dark_layout(
-        title=title, xaxis_title="Mile Marker",
+        title=title, xaxis_title=x_title,
         yaxis_title=wind_unit, height=300,
     ))
     fig.update_xaxes(gridcolor=GRID_COLOR)
@@ -138,15 +141,15 @@ def build_wind_chart(df, selected_date=None, wind_unit="km/h"):
     return fig
 
 
-def build_sunrise_sunset_chart(df, selected_date=None):
-    """Sunrise/Sunset timeline showing the daylight window per mile marker."""
+def build_sunrise_sunset_chart(df, selected_date=None, x_col="Mile Marker"):
+    """Sunrise/Sunset timeline showing the daylight window per mile marker or date."""
     day_df = df[df["Date"] == selected_date].copy() if selected_date else df.copy()
     if day_df.empty or "_sunrise_h" not in day_df.columns:
         return None
 
-    # For "All Days" mode, average sunrise/sunset per mile marker
+    # For "All Days" mode, average sunrise/sunset per x_col
     if selected_date is None:
-        day_df = day_df.groupby("Mile Marker").agg({
+        day_df = day_df.groupby(x_col).agg({
             "_sunrise_h": "mean", "_sunset_h": "mean"
         }).reset_index()
 
@@ -158,14 +161,14 @@ def build_sunrise_sunset_chart(df, selected_date=None):
 
     # Dark before sunrise (invisible spacer)
     fig.add_trace(go.Bar(
-        x=day_df["Mile Marker"], y=sunrise,
+        x=day_df[x_col], y=sunrise,
         name="Night", marker_color="rgba(0,0,0,0)",
         showlegend=False, hoverinfo="skip",
     ))
 
     # Daylight window (stacked on top of spacer)
     fig.add_trace(go.Bar(
-        x=day_df["Mile Marker"], y=daylight,
+        x=day_df[x_col], y=daylight,
         name="☀️ Daylight",
         marker_color="#fbbf24",
         opacity=0.85,
@@ -180,9 +183,10 @@ def build_sunrise_sunset_chart(df, selected_date=None):
     title = "🌅 Sunrise / Sunset"
     if selected_date:
         title += f" — {selected_date}"
+    x_title = "Date" if x_col == "Date" else "Mile Marker"
 
     fig.update_layout(**_dark_layout(
-        title=title, xaxis_title="Mile Marker",
+        title=title, xaxis_title=x_title,
         yaxis_title="Time of Day", height=300,
         barmode="stack",
     ))
