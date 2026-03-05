@@ -400,6 +400,7 @@ def main():
         st.session_state.weather_by_mm_and_year_thru = None
         st.session_state.weather_history_df = None
         st.session_state.comparison_df = None
+        st.session_state.spot_weather_df = None
         st.rerun()
 
     col3, col4 = st.sidebar.columns(2)
@@ -475,7 +476,7 @@ def main():
             mm_options=mm_options,
             timezone=timezone
         )
-    elif current_page == "� Spot Weather":
+    elif current_page == "📍 Spot Weather":
         coming_soon_page()
 
     # Footer

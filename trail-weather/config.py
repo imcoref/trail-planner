@@ -34,11 +34,6 @@ TRAILS = {
         "emoji": "🗻",
         "timezone": "America/Denver",
     },
-    "Rennsteig": {
-        "name": "Rennsteig",
-        "emoji": "🌳",
-        "timezone": "Europe/Berlin",
-    },
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")

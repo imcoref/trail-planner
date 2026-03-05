@@ -239,7 +239,7 @@ def main():
     )
 
     parser.add_argument(
-        "-m", "--mile_marker_file",
+        "-i", "--interval_mile_marker_file",
         metavar="STRING",
         help="generate milemarker file with given mile interval"
     )

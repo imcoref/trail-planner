@@ -502,7 +502,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
         emblem_image=emblem_path if has_emblem else None,
         route_coords=route_coords,
     )
-    st_folium(m, width='stretch', height=600, returned_objects=[])
+    st_folium(m, use_container_width=True, height=600, returned_objects=[])
     
     # Elevation Profile
     if not use_upload and selected_trail:
@@ -737,7 +737,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
                 emblem_image=emblem_path if has_emblem else None,
                 route_coords=route_coords,
             )
-            st_folium(m, width='stretch', height=500, returned_objects=[])
+            st_folium(m, use_container_width=True, height=500, returned_objects=[])
         
         with col_elev:
             st.markdown("#### 📈 Elevation Profile")
@@ -830,7 +830,7 @@ def coming_soon_page():
 
     map_data = st_folium(
         m,
-        width="100%",
+        use_container_width=True,
         height=500,
         returned_objects=["last_clicked"],
     )
