@@ -40,6 +40,7 @@ from elevation_utils import (
     load_elevation_profile, get_segment_elevation_stats,
     plan_thru_hike, get_thru_hike_summary, recalculate_day_stats,
 )
+from pages_content import thru_hike_planner_page, history_weather_page, coming_soon_page
 
 
 # ─── Page Config ───────────────────────────────────────────────────
@@ -130,6 +131,8 @@ def init_session_state():
         "last_start_date": None,
         "mm_weather_df": None,
         "weather_by_mm_and_year": None,
+        "weather_by_mm_and_year_thru": None,
+        "weather_history_df": None,
         "mm_range_coords": None,
         "last_unit_system": None,
         "last_nobo": None,
@@ -137,6 +140,13 @@ def init_session_state():
         "uploaded_trail": None,
         "comparison_df": None,
         "thru_hike_days": None,
+        "unit_system": "Metric",
+        "show_mm": True,
+        "show_poi": False,
+        "reset_mm_range": False,
+        "direction": "NOBO",
+        "last_thru_params": None,
+        "itinerary_manually_edited": False,
     }
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -168,11 +178,111 @@ def generate_share_url(trail, start_date, end_date, start_mm, end_mm):
 
 
 def main():
+    # Page config
+    st.set_page_config(
+        page_title="Trail Weather Tool",
+        page_icon="🥾",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+
+    # Custom CSS
+    st.markdown(
+        """
+        <style>
+        /* ─── Shepherd Footer ─── */
+        .shepherd-footer {
+            margin-top: 2rem;
+            padding: 1rem;
+            text-align: center;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .shepherd-footer a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        .shepherd-footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* ─── Metric Cards with colored accents ─── */
+        [data-testid="stMetric"] {
+            border-radius: 12px;
+            padding: 14px 18px;
+            border: 1px solid rgba(128, 128, 128, 0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        [data-testid="stMetric"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        }
+        /* Colored left border accents for metrics via nth-of-type */
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-of-type(1) [data-testid="stMetric"] {
+            border-left: 4px solid #3b82f6;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-of-type(2) [data-testid="stMetric"] {
+            border-left: 4px solid #10b981;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-of-type(3) [data-testid="stMetric"] {
+            border-left: 4px solid #f59e0b;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-of-type(4) [data-testid="stMetric"] {
+            border-left: 4px solid #ef4444;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:nth-of-type(5) [data-testid="stMetric"] {
+            border-left: 4px solid #8b5cf6;
+        }
+
+        /* ─── Styled control card container ─── */
+        .control-card {
+            border: 1px solid rgba(128, 128, 128, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem 1.5rem 1rem 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+        }
+
+        /* ─── Section dividers ─── */
+        .section-divider {
+            height: 3px;
+            background: linear-gradient(90deg, transparent, rgba(59,130,246,0.3), transparent);
+            border: none;
+            margin: 2rem 0;
+            border-radius: 2px;
+        }
+        .section-header {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        /* ─── DataFrames ─── */
+        .stDataFrame { border-radius: 8px; overflow: hidden; }
+
+        /* ─── Expander refinements ─── */
+        [data-testid="stExpander"] {
+            border-radius: 12px;
+            border: 1px solid rgba(128, 128, 128, 0.15);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     init_session_state()
+
+    # Initialize additional page navigation state
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "Thru-Hike  Planner"
 
     available_trails = get_available_trails()
 
-    # ─── Sidebar ──────────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════
+    # SIDEBAR - Trail Selection, Emblem, Page Navigation, Settings
+    # ═══════════════════════════════════════════════════════════════
 
     # Trail Selector
     use_upload = False
@@ -199,73 +309,12 @@ def main():
                 f'style="pointer-events:none; user-select:none; display:block; margin:0 auto 0.5rem auto;">',
                 unsafe_allow_html=True,
             )
-        #st.sidebar.markdown(f"### {trail_meta['emoji']} {trail_meta['name']}")
     else:
         selected_trail = None
         trail_meta = None
         trail_files = None
         has_emblem = False
         emblem_path = None
-
-    # ─── GPX Upload ───────────────────────────────────────────────
-    # with st.sidebar.expander("📤 Upload Custom Trail (GPX)", expanded=not bool(available_trails)):
-    #     uploaded_gpx = st.file_uploader(
-    #         "Drop your GPX file here",
-    #         type=["gpx"],
-    #         label_visibility="collapsed",
-    #     )
-    #     upload_name = st.text_input("Trail Name", value="MyTrail", max_chars=20)
-    #     upload_interval = st.number_input("Mile Marker Interval", value=10, min_value=1, max_value=50)
-
-    #     if uploaded_gpx and st.button("🔄 Process & Save GPX", width='stretch'):
-    #         with st.spinner("Processing GPX file..."):
-    #             result = process_gpx_upload(uploaded_gpx, upload_name, upload_interval)
-    #             if result:
-    #                 # Save to SQLite
-    #                 trail_id = save_trail(
-    #                     upload_name, upload_interval,
-    #                     result["trackpoints_df"],
-    #                     result["mm_nobo_df"],
-    #                     result["mm_sobo_df"],
-    #                 )
-    #                 st.session_state.uploaded_trail = result
-    #                 st.session_state.mm_weather_df = None
-    #                 st.session_state.mm_range_coords = None
-    #                 st.success(f"✅ {upload_name} saved! "
-    #                           f"{len(result['trackpoints_df'])} trackpoints, "
-    #                           f"{len(result['mm_nobo_df'])} mile markers")
-    #             else:
-    #                 st.error("❌ No track data found in GPX file")
-
-    # ─── Saved Custom Trails ──────────────────────────────────────
-    # saved_trails = list_saved_trails()
-    # with st.sidebar.expander(f"💾 Saved Trails ({len(saved_trails)})", expanded=len(saved_trails) > 0):
-    #     if saved_trails:
-    #         for t in saved_trails:
-    #             col_load, col_del = st.columns([3, 1])
-    #             with col_load:
-    #                 if st.button(
-    #                     f"📂 {t['name']} ({t['total_miles']:.0f} mi)",
-    #                     key=f"load_{t['id']}",
-    #                     width='stretch',
-    #                 ):
-    #                     loaded = load_trail(t["id"])
-    #                     if loaded:
-    #                         st.session_state.uploaded_trail = loaded
-    #                         st.session_state.mm_weather_df = None
-    #                         st.session_state.mm_range_coords = None
-    #                         st.rerun()
-    #             with col_del:
-    #                 if st.button("🗑️", key=f"del_{t['id']}"):
-    #                     delete_trail(t["id"])
-    #                     if (st.session_state.uploaded_trail
-    #                             and st.session_state.uploaded_trail.get("trail_name") == t["name"]):
-    #                         st.session_state.uploaded_trail = None
-    #                         st.session_state.mm_weather_df = None
-    #                         st.session_state.mm_range_coords = None
-    #                     st.rerun()
-    #         else:
-    #             st.caption("No trails saved yet.\nUpload a GPX file ☝️")
 
     # Determine data source: uploaded trail or built-in
     if st.session_state.uploaded_trail:
@@ -290,37 +339,105 @@ def main():
         st.session_state.mm_weather_df = None
         st.session_state.mm_range_coords = None
         st.session_state.comparison_df = None
+        st.session_state.weather_by_mm_and_year = None
+        st.session_state.weather_by_mm_and_year_thru = None
+        st.session_state.weather_history_df = None
         st.session_state.thru_hike_days = None
         st.session_state.reset_mm_range = True
+        # Explicitly set MM selectboxes to new trail's full range
+        nobo_reset = st.session_state.direction == "NOBO"
+        mm_file_reset = trail_files["mm_nobo"] if nobo_reset else trail_files["mm_sobo"]
+        mm_df_reset = load_csv(mm_file_reset)
+        mm_opts_reset = mm_df_reset["mile_marker"].tolist()
+        st.session_state.start_mm_page = mm_opts_reset[0]
+        st.session_state.end_mm_page = mm_opts_reset[-1]
+        st.session_state.start_mm_weather = mm_opts_reset[0]
+        st.session_state.end_mm_weather = mm_opts_reset[-1]
         st.session_state.last_trail = selected_trail
+        st.rerun()
 
     st.sidebar.markdown("---")
 
-    # Initialize Settings variables early (UI widgets are at bottom of sidebar)
-    # Get or set default values
-    if "unit_system" not in st.session_state:
-        st.session_state.unit_system = "Metric"
-    if "direction" not in st.session_state:
-        st.session_state.direction = "NOBO"
-    if "show_mm" not in st.session_state:
-        st.session_state.show_mm = False
-    if "show_poi" not in st.session_state:
-        st.session_state.show_poi = False
+    # ─── Page Navigation ──────────────────────────────────────────
+    st.sidebar.markdown("### 🗺️ Navigation")
+    page_options = [
+        "🥾 Thru-Hike Planner",
+        "📊 History Weather",
+        "🔮 Coming Soon"
+    ]
+    current_page = st.sidebar.radio(
+        "Select Page",
+        options=page_options,
+        index=page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0,
+        label_visibility="collapsed"
+    )
     
-    # Use values from session state
-    unit_system = st.session_state.unit_system
-    is_metric = unit_system == "Metric"
-    temperature_unit = "celsius" if is_metric else "fahrenheit"
-    temp_symbol = "°C" if is_metric else "°F"
-    wind_unit = "km/h" if is_metric else "mph"
-    rain_unit = "mm" if is_metric else "in"
-    snow_unit = "cm" if is_metric else "in"
-    direction = st.session_state.direction
-    nobo = direction == "NOBO"
-    show_mm = st.session_state.show_mm
-    show_poi = st.session_state.show_poi
+    # Update session state if page changed
+    if current_page != st.session_state.current_page:
+        st.session_state.current_page = current_page
+        st.rerun()
 
-    # ─── Load Trail Data (cached) ────────────────────────────────
+    st.sidebar.markdown("---")
+
+    # ─── Settings ─────────────────────────────────────────────────
+    st.sidebar.markdown("### Settings")
+    
+    # Get current values from session state
+    is_metric = st.session_state.unit_system == "Metric"
+    
+    unit_system_new = st.sidebar.radio(
+        "Units", 
+        ["Metric", "Imperial"], 
+        horizontal=True, 
+        index=0 if is_metric else 1
+    )
+    if unit_system_new != st.session_state.unit_system:
+        st.session_state.unit_system = unit_system_new
+        st.session_state.mm_weather_df = None
+        st.session_state.weather_by_mm_and_year = None
+        st.session_state.weather_by_mm_and_year_thru = None
+        st.session_state.weather_history_df = None
+        st.session_state.comparison_df = None
+        st.rerun()
+
+    col3, col4 = st.sidebar.columns(2)
+    with col3:
+        show_mm_new = st.checkbox("Mile Markers", value=st.session_state.show_mm)
+        if show_mm_new != st.session_state.show_mm:
+            st.session_state.show_mm = show_mm_new
+            st.rerun()
+    with col4:
+        if not use_upload and trail_files:
+            has_poi = os.path.isfile(trail_files["poi"])
+        else:
+            has_poi = False
+        show_poi_new = st.checkbox("POIs", value=st.session_state.show_poi, disabled=not has_poi)
+        if show_poi_new != st.session_state.show_poi:
+            st.session_state.show_poi = show_poi_new
+            st.rerun()
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Proudly presented by Shepherd 🇩🇪 🍺 🥨")
+
+    # Donate button
+    donate_img_path = os.path.join(os.path.dirname(__file__), "data", "donate.png")
+    if os.path.isfile(donate_img_path):
+        donate_b64 = load_emblem_b64(donate_img_path)
+        st.sidebar.markdown(
+            f'<a href="https://paypal.me/imcoref" target="_blank">'
+            f'<img src="data:image/png;base64,{donate_b64}" '
+            f'style="width:100%; max-width:200px; display:block; margin:0 auto; cursor:pointer;">'
+            f'</a>',
+            unsafe_allow_html=True,
+        )
+
+    # ═══════════════════════════════════════════════════════════════
+    # MAIN CONTENT - Page Routing
+    # ═══════════════════════════════════════════════════════════════
+
+    # Load trail data (needed by all pages)
+    nobo = st.session_state.direction == "NOBO"
+    
     if use_upload:
         upl = st.session_state.uploaded_trail
         route_df = upl["trackpoints_df"]
@@ -332,520 +449,32 @@ def main():
 
     mm_options = mm_df["mile_marker"].tolist()
 
-    # Apply URL params
+    # Apply URL params (only for built-in trails)
     if not use_upload and available_trails:
         apply_url_params(available_trails, mm_options)
 
-    # ─── 🥾 Thru-Hike Planner (Inputs) ───────────────────────────
-    st.sidebar.markdown("### 🥾 Thru-Hike Planner")
-    thru_col1, thru_col2 = st.sidebar.columns([2, 1])
-    with thru_col1:
-        thru_pace = st.number_input(
-            "📏 max mi/day (flat)",
-            min_value=5.0, max_value=40.0, value=20.0, step=1.0,
-            help="Target miles per day on flat terrain. Elevation gain reduces effective pace.",
+    # Route to appropriate page
+    if current_page == "🥾 Thru-Hike Planner":
+        thru_hike_planner_page(
+            selected_trail=selected_trail,
+            trail_meta=trail_meta,
+            use_upload=use_upload,
+            route_df=route_df,
+            mm_df=mm_df,
+            mm_options=mm_options
         )
-    with thru_col2:
-        thru_adjust_elev = st.checkbox("🏔️ Elev.", value=True,
-                                        help="Naismith's Rule: +1h/600m ascent, +1h/800m descent")
-
-    # ─── Mile Marker Range ────────────────────────────────────────
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📏 Mile Marker Range")
-
-    # Direction selector
-    direction_new = st.sidebar.radio("Direction", ["NOBO", "SOBO"], horizontal=True, index=0 if nobo else 1)
-    if direction_new != direction:
-        st.session_state.direction = direction_new
-        st.session_state.mm_weather_df = None
-        st.session_state.comparison_df = None
-        st.session_state.thru_hike_days = None
-        st.rerun()
-
-    # Auto-reset MM range when trail changes
-    if st.session_state.get("reset_mm_range", False):
-        # Clear stale selectbox keys so they default to first/last
-        if "start_mm" in st.session_state:
-            del st.session_state["start_mm"]
-        if "end_mm" in st.session_state:
-            del st.session_state["end_mm"]
-        st.session_state.reset_mm_range = False
-
-    start_mm = st.sidebar.selectbox("Start MM", mm_options, index=0, key="start_mm")
-    end_mm = st.sidebar.selectbox("End MM", mm_options, index=len(mm_options) - 1, key="end_mm")
-
-    # Force End MM to max if it's not a valid option for this trail
-    if end_mm not in mm_options:
-        end_mm = mm_options[-1]
-        st.session_state.end_mm = end_mm
-    if start_mm > end_mm:
-        start_mm, end_mm = end_mm, start_mm
-
-    st.sidebar.caption(f"📐 Range: **{start_mm}** → **{end_mm}** ({end_mm - start_mm:.0f} mi)")
-
-    selected_points = mm_df[
-        (mm_df["mile_marker"] >= start_mm) & (mm_df["mile_marker"] <= end_mm)
-    ]
-
-    # Reset thru-hike plan if MM range changed
-    mm_range_key = (start_mm, end_mm)
-    if st.session_state.get("last_mm_range") != mm_range_key:
-        st.session_state.thru_hike_days = None
-        st.session_state.last_mm_range = mm_range_key
-
-    # Compute thru-hike plan
-    if not use_upload and selected_trail:
-        seg_stats = get_segment_elevation_stats(selected_trail, direction)
-        # Filter seg_stats to only include segments within the selected MM range
-        if seg_stats is not None:
-            seg_stats = seg_stats[
-                (seg_stats["start_mm"] >= start_mm) & (seg_stats["end_mm"] <= end_mm)
-            ].reset_index(drop=True)
-    else:
-        seg_stats = None
-
-    thru_mm_df = mm_df[
-        (mm_df["mile_marker"] >= start_mm) & (mm_df["mile_marker"] <= end_mm)
-    ].reset_index(drop=True)
-
-    # ─── 📅 Date Range ────────────────────────────────────────────
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📅 Date Range")
-    date_format = "DD-MM-YYYY" if is_metric else "YYYY-MM-DD"
-    start_date = st.sidebar.date_input(
-        "Start Date",
-        min_value=Date.today(),
-        max_value=Date(2100, 12, 31),
-        format=date_format,
-        key="start_date",
-    )
-    
-    # Placeholder for end date - will be calculated by thru-hike planner
-    hike_start = st.session_state.start_date
-    hike_duration_days = None
-
-    # ─── 🥾 Thru-Hike Planner (Calculations) ─────────────────────
-    # Compute thru-hike plan
-    if not use_upload and selected_trail:
-        seg_stats = get_segment_elevation_stats(selected_trail, direction)
-        # Filter seg_stats to only include segments within the selected MM range
-        if seg_stats is not None:
-            seg_stats = seg_stats[
-                (seg_stats["start_mm"] >= start_mm) & (seg_stats["end_mm"] <= end_mm)
-            ].reset_index(drop=True)
-    else:
-        seg_stats = None
-
-    thru_mm_df = mm_df[
-        (mm_df["mile_marker"] >= start_mm) & (mm_df["mile_marker"] <= end_mm)
-    ].reset_index(drop=True)
-
-    # Check if thru-hike parameters changed - if so, force recalculation
-    thru_params_key = (start_mm, end_mm, hike_start, thru_pace, thru_adjust_elev, selected_trail, direction)
-    params_changed = st.session_state.get("last_thru_params") != thru_params_key
-    manually_edited = st.session_state.get("itinerary_manually_edited", False)
-    
-    # Recalculate only if:
-    # - Parameters changed AND not manually edited
-    # - OR thru_hike_days doesn't exist
-    if len(thru_mm_df) >= 2 and ((params_changed and not manually_edited) or st.session_state.thru_hike_days is None):
-        thru_days = plan_thru_hike(
-            thru_mm_df, seg_stats, hike_start,
-            thru_pace, thru_adjust_elev,
+    elif current_page == "📊 History Weather":
+        history_weather_page(
+            selected_trail=selected_trail,
+            trail_meta=trail_meta,
+            use_upload=use_upload,
+            route_df=route_df,
+            mm_df=mm_df,
+            mm_options=mm_options,
+            timezone=timezone
         )
-        summary = get_thru_hike_summary(thru_days)
-        st.session_state.thru_hike_days = thru_days
-        st.session_state.last_thru_params = thru_params_key
-        st.session_state.itinerary_manually_edited = False
-    
-    # Display thru-hike summary and table
-    if st.session_state.thru_hike_days:
-        thru_days = st.session_state.thru_hike_days
-        summary = get_thru_hike_summary(thru_days)
-        if summary:
-            hike_duration_days = summary["total_days"]
-            end_date_hike = hike_start + timedelta(days=hike_duration_days - 1)
-            # target_end = min(end_date_hike, Date.today() - timedelta(days=1))
-
-            # # Auto-set end date to match hike duration
-            # st.session_state.end_date = target_end
-
-            st.sidebar.markdown(
-                f"📅 **{summary['total_days']} Days** "
-                f"({summary['avg_daily_mi']} mi/day)  \n"
-                f"🏁 **{hike_start.strftime('%d.%m.%Y')} → "
-                f"{end_date_hike.strftime('%d.%m.%Y')}**  \n"
-                f"⬆️ {summary['total_gain_ft']:,} ft &nbsp; "
-                f"⬇️ {summary['total_loss_ft']:,} ft &nbsp; "
-                f"🏔️ {summary['highest_camp_ft']:,} ft"
-            )
-            
-            # ─── Thru-Hike Itinerary Table (Editable) ───────────────────────
-            with st.expander("📋 Show Daily Stages (End MM editable)", expanded=False):
-                itinerary_df = pd.DataFrame(thru_days)
-                
-                # Show manual edit status
-                if st.session_state.get("itinerary_manually_edited", False):
-                    st.info("✏️ Plan was manually edited. Click '🔄 Update Plan' to recalculate automatically.")
-                
-                display_cols = {
-                    "day": "Day",
-                    "date": "Date",
-                    "start_mm": "Start MM",
-                    "end_mm": "End MM",
-                    "distance_mi": "Miles",
-                    "gain_ft": "↑ Gain (ft)",
-                    "loss_ft": "↓ Loss (ft)",
-                    "camp_elev_ft": "Camp Elev (ft)",
-                }
-                show_df = itinerary_df[[c for c in display_cols.keys() if c in itinerary_df.columns]]
-                show_df = show_df.rename(columns=display_cols)
-                
-                # Make End MM column editable
-                edited_df = st.data_editor(
-                    show_df,
-                    hide_index=True,
-                    width='stretch',
-                    disabled=["Day", "Date", "Start MM", "Miles", "↑ Gain (ft)", "↓ Loss (ft)", "Camp Elev (ft)"],
-                    key="itinerary_editor"
-                )
-                
-                # Check if End MM values changed
-                if not edited_df["End MM"].equals(show_df["End MM"]):
-                    if st.button("🔄 Recalculate with new values", key="recalc_itinerary"):
-                        # Get current params for saving
-                        current_params = (start_mm, end_mm, hike_start, thru_pace, thru_adjust_elev, selected_trail, direction)
-                        
-                        # Find the first day with changed End MM
-                        first_changed_idx = None
-                        for i, row in edited_df.iterrows():
-                            if row["End MM"] != show_df.iloc[i]["End MM"]:
-                                first_changed_idx = i
-                                break
-                        
-                        if first_changed_idx is not None:
-                            # Keep days before the change as-is
-                            updated_days = [thru_days[j].copy() for j in range(first_changed_idx)]
-                            
-                            # Update the changed day
-                            changed_day = thru_days[first_changed_idx].copy()
-                            if first_changed_idx > 0:
-                                changed_day["start_mm"] = updated_days[-1]["end_mm"]
-                            changed_day["end_mm"] = float(edited_df.iloc[first_changed_idx]["End MM"])
-                            changed_day["distance_mi"] = round(changed_day["end_mm"] - changed_day["start_mm"], 1)
-                            
-                            # Recalculate gain/loss for changed day
-                            stats = recalculate_day_stats(changed_day, thru_mm_df, seg_stats)
-                            changed_day.update(stats)
-                            
-                            # Recalculate position
-                            from elevation_utils import _interpolate_position
-                            mms = thru_mm_df["mile_marker"].values
-                            lats = thru_mm_df["latitude"].values
-                            lons = thru_mm_df["longitude"].values
-                            elevs = thru_mm_df["elevation_m"].values if "elevation_m" in thru_mm_df.columns else np.zeros(len(mms))
-                            
-                            camp_lat, camp_lon, camp_elev = _interpolate_position(
-                                changed_day["end_mm"], mms, lats, lons, elevs
-                            )
-                            changed_day["camp_lat"] = camp_lat
-                            changed_day["camp_lon"] = camp_lon
-                            changed_day["camp_elev_m"] = round(camp_elev)
-                            changed_day["camp_elev_ft"] = round(camp_elev * 3.281)
-                            changed_day["mile_marker"] = changed_day["end_mm"]
-                            
-                            # Update date if not first day
-                            if first_changed_idx > 0:
-                                prev_date = updated_days[-1]["date_obj"]
-                                changed_day["date_obj"] = prev_date + timedelta(days=1)
-                                changed_day["date"] = changed_day["date_obj"].strftime("%Y-%m-%d")
-                            
-                            updated_days.append(changed_day)
-                            
-                            # Replan all subsequent days from the new End MM
-                            remaining_mm = end_mm - changed_day["end_mm"]
-                            
-                            if remaining_mm > 0.1:
-                                # Create a sub-dataframe for replanning
-                                replan_mm_df = thru_mm_df[thru_mm_df["mile_marker"] >= changed_day["end_mm"]].reset_index(drop=True)
-                                
-                                if len(replan_mm_df) >= 2:
-                                    # Get next date
-                                    next_date = changed_day["date_obj"] + timedelta(days=1)
-                                    
-                                    # Replan remaining days
-                                    replanned_days = plan_thru_hike(
-                                        replan_mm_df, seg_stats, next_date,
-                                        thru_pace, thru_adjust_elev,
-                                    )
-                                    
-                                    # Adjust day numbers to continue from current day
-                                    for new_day in replanned_days:
-                                        new_day["day"] = len(updated_days) + 1
-                                        updated_days.append(new_day)
-                            
-                            # Save updated plan and mark as manually edited
-                            st.session_state.thru_hike_days = updated_days
-                            st.session_state.itinerary_manually_edited = True
-                            st.session_state.last_thru_params = current_params
-                            st.success(f"✓ {len(updated_days)} days updated (replanned from day {first_changed_idx + 1})!")
-                            st.rerun()
-
-    # Complete Date Range section with end date display
-
-    # Automatically set end date based on thru-hike duration
-    if hike_duration_days:
-        end_date = start_date + timedelta(days=hike_duration_days - 1)
-        st.session_state["end_date"] = end_date
-        st.sidebar.markdown(f"**End Date:** {end_date.strftime('%d.%m.%Y' if is_metric else '%Y-%m-%d')} *(automatically calculated)*")
-    else:
-        # If no thru-hike plan, allow manual end date selection
-        end_date_raw = st.session_state.get("end_date", start_date + timedelta(days=30))
-        if end_date_raw < start_date:
-            st.session_state["end_date"] = start_date
-            end_date_raw = start_date
-        end_date = st.sidebar.date_input(
-            "End Date",
-            min_value=start_date,
-            max_value=Date(2100, 12, 31),
-            format=date_format,
-            key="end_date",
-        )
-    
-    # Button to recalculate thru-hike plan with new dates
-    if st.sidebar.button("🔄 Update Plan", width='stretch', help="Recalculation with changed start date"):
-        st.session_state.thru_hike_days = None
-        st.session_state.itinerary_manually_edited = False
-        st.rerun()
-
-    st.sidebar.markdown("---")
-
-    # ─── Load Weather ─────────────────────────────────────────────
-    wind_speed_unit_api = "kmh" if is_metric else "mph"
-    if st.sidebar.button("⚡ Load Weather", type="primary", width='stretch'):
-        with st.spinner(f"🌤️ Loading weather from last 5 years for {trail_name_display}..."):
-            latitudes = selected_points["latitude"].tolist()
-            longitudes = selected_points["longitude"].tolist()
-            mile_markers = selected_points["mile_marker"].tolist()
-
-            # Load weather data for the same date range in the last 5 years
-            current_year = Date.today().year
-            weather_by_mm_and_year = {}
-            
-            for year_offset in range(1, 6):  # Last 5 years: current_year-1 to current_year-5
-                target_year = current_year - year_offset
-                try:
-                    # Adjust dates to target year
-                    hist_start = start_date.replace(year=target_year)
-                    hist_end = end_date.replace(year=target_year)
-                    
-                    responses = fetch_weather(
-                        latitudes, longitudes, hist_start, hist_end,
-                        temperature_unit, timezone, wind_speed_unit_api,
-                    )
-                    year_df = process_weather_responses(
-                        responses, mile_markers, latitudes, longitudes, temp_symbol, timezone,
-                        wind_unit, rain_unit, snow_unit,
-                    )
-                    
-                    # Store data by mile marker and year
-                    for mm in mile_markers:
-                        if mm not in weather_by_mm_and_year:
-                            weather_by_mm_and_year[mm] = {}
-                        mm_data = year_df[year_df["Mile Marker"] == mm]
-                        if not mm_data.empty:
-                            weather_by_mm_and_year[mm][target_year] = mm_data
-                except Exception as e:
-                    st.warning(f"⚠️ Could not load data for year {target_year}: {str(e)}")
-            
-            st.session_state.weather_by_mm_and_year = weather_by_mm_and_year
-            st.session_state.mm_weather_df = None  # Clear old format
-            st.session_state.mm_range_coords = calculate_range_coords(
-                route_df, mm_df, start_mm, end_mm
-            )
-            st.session_state.comparison_df = None
-
-    # ─── Year Comparison Button ───────────────────────────────────
-    # if st.session_state.mm_weather_df is not None:
-    #     if st.sidebar.button("📅 Compare with Previous Year", width='stretch'):
-    #         prev_start = start_date.replace(year=start_date.year - 1)
-    #         prev_end = end_date.replace(year=end_date.year - 1)
-    #         with st.spinner("📅 Loading previous year data..."):
-    #             latitudes = selected_points["latitude"].tolist()
-    #             longitudes = selected_points["longitude"].tolist()
-    #             mile_markers = selected_points["mile_marker"].tolist()
-    #
-    #             prev_responses = fetch_weather(
-    #                 latitudes, longitudes, prev_start, prev_end,
-    #                 temperature_unit, timezone, wind_speed_unit_api,
-    #             )
-    #             st.session_state.comparison_df = process_weather_responses(
-    #                 prev_responses, mile_markers, latitudes, longitudes, temp_symbol, timezone,
-    #                 wind_unit, rain_unit, snow_unit,
-    #             )
-    #         st.rerun()
-
-    # Clear Button
-    if st.session_state.get("weather_by_mm_and_year") is not None or st.session_state.mm_range_coords is not None:
-        if st.sidebar.button("🗑️ Clear Selection", width='stretch'):
-            st.session_state.mm_range_coords = None
-            st.session_state.mm_weather_df = None
-            st.session_state.weather_by_mm_and_year = None
-            st.session_state.comparison_df = None
-            st.session_state.thru_hike_days = None
-            st.session_state.reset_mm_range = True
-            st.rerun()
-
-    
-
-    # ─── Settings (UI Widgets) ─────────────────────────────────────────────────
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Settings")
-    unit_system_new = st.sidebar.radio("Units", ["Metric", "Imperial"], horizontal=True, index=0 if is_metric else 1)
-    if unit_system_new != unit_system:
-        st.session_state.unit_system = unit_system_new
-        st.session_state.mm_weather_df = None
-        st.session_state.comparison_df = None
-        st.rerun()
-
-    col3, col4 = st.sidebar.columns(2)
-    with col3:
-        show_mm_new = st.checkbox("Mile Markers", value=show_mm)
-        if show_mm_new != show_mm:
-            st.session_state.show_mm = show_mm_new
-            st.rerun()
-    with col4:
-        if not use_upload and trail_files:
-            has_poi = os.path.isfile(trail_files["poi"])
-        else:
-            has_poi = False
-        show_poi_new = st.checkbox("POIs", value=show_poi, disabled=not has_poi)
-        if show_poi_new != show_poi:
-            st.session_state.show_poi = show_poi_new
-            st.rerun()
-
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Proudly presented by Shepherd 🇩🇪 🍺 🥨")
-    # st.sidebar.caption("Pimped by GitHub Copilot 🤖✨")
-
-    # # ─── Share Link ───────────────────────────────────────────────
-    # if not use_upload and st.session_state.mm_weather_df is not None:
-    #     share_url = generate_share_url(selected_trail, start_date, end_date, start_mm, end_mm)
-    #     st.sidebar.markdown("---")
-    #     st.sidebar.markdown("### 🔗 Share")
-    #     st.sidebar.code(share_url, language=None)
-
-    # ═══════════════════════════════════════════════════════════════
-    # MAIN CONTENT
-    # ═══════════════════════════════════════════════════════════════
-
-    # ─── Map ──────────────────────────────────────────────────────
-    poi_df = None
-    if not use_upload and has_poi and show_poi:
-        poi_df = load_csv(trail_files["poi"])
-
-    route_coords = simplify_route(route_df)
-
-    m = build_trail_map(
-        route_df=route_df,
-        mm_range_coords=st.session_state.mm_range_coords,
-        mm_df=mm_df,
-        show_mm=show_mm,
-        direction=direction,
-        poi_df=poi_df,
-        show_poi=show_poi,
-        emblem_image=emblem_path if has_emblem else None,
-        route_coords=route_coords,
-    )
-    st_folium(m, width='stretch', height=650, returned_objects=[])
-
-    # ─── Elevation Profile ────────────────────────────────────────
-    if not use_upload and selected_trail:
-        elev_df = load_elevation_profile(selected_trail)
-        if elev_df is not None:
-            elev_chart = build_elevation_profile(
-                elev_df, mm_df, start_mm, end_mm,
-            )
-            if elev_chart:
-                st.plotly_chart(elev_chart, width='stretch')
-
-    # ─── Weather Data (Last 5 Years) ──────────────────────────────
-    if st.session_state.get("weather_by_mm_and_year") is not None:
-        weather_by_mm_and_year = st.session_state.weather_by_mm_and_year
-        
-        st.markdown("### 📊 Historical Weather Data (Last 5 Years)")
-        st.markdown(f"**Date Range:** {start_date.strftime('%B %d')} to {end_date.strftime('%B %d')}")
-        st.markdown("---")
-        
-        # Display data for each mile marker
-        for mm in sorted(weather_by_mm_and_year.keys()):
-            with st.expander(f"📍 Mile Marker {mm}", expanded=False):
-                year_data = weather_by_mm_and_year[mm]
-                
-                if not year_data:
-                    st.info("No data available for this mile marker")
-                    continue
-                
-                # Prepare table with 6 rows (5 years + average)
-                temp_max_col = f"Temp Max ({temp_symbol})"
-                temp_min_col = f"Temp Min ({temp_symbol})"
-                rain_col = f"Rain ({rain_unit})"
-                snow_col = f"Snow ({snow_unit})"
-                wind_col = f"Wind Max ({wind_unit})"
-                gust_col = f"Gusts ({wind_unit})"
-                
-                table_rows = []
-                
-                # Collect data for each year (sorted from newest to oldest)
-                for year in sorted(year_data.keys(), reverse=True):
-                    year_df = year_data[year]
-                    
-                    # Aggregate data across the date range for this year
-                    row = {
-                        "Year": str(year),
-                        temp_max_col: f"{year_df[temp_max_col].max():.1f}" if temp_max_col in year_df.columns else "N/A",
-                        temp_min_col: f"{year_df[temp_min_col].min():.1f}" if temp_min_col in year_df.columns else "N/A",
-                        rain_col: f"{year_df[rain_col].sum():.1f}" if rain_col in year_df.columns else "N/A",
-                        snow_col: f"{year_df[snow_col].sum():.1f}" if snow_col in year_df.columns else "N/A",
-                        wind_col: f"{year_df[wind_col].max():.1f}" if wind_col in year_df.columns else "N/A",
-                        gust_col: f"{year_df[gust_col].max():.1f}" if gust_col in year_df.columns else "N/A",
-                    }
-                    
-                    # Add weather description (most common)
-                    if "Weather" in year_df.columns:
-                        weather_counts = year_df["Weather"].value_counts()
-                        row["Weather"] = weather_counts.index[0] if len(weather_counts) > 0 else "N/A"
-                    else:
-                        row["Weather"] = "N/A"
-                    
-                    table_rows.append(row)
-                
-                # Calculate average row
-                if table_rows:
-                    avg_row = {"Year": "Average"}
-                    
-                    # Calculate averages for numeric columns
-                    for col in [temp_max_col, temp_min_col, rain_col, snow_col, wind_col, gust_col]:
-                        values = []
-                        for row in table_rows:
-                            try:
-                                val = float(row[col])
-                                values.append(val)
-                            except (ValueError, TypeError):
-                                pass
-                        
-                        if values:
-                            avg_row[col] = f"{np.mean(values):.1f}"
-                        else:
-                            avg_row[col] = "N/A"
-                    
-                    avg_row["Weather"] = "Various"
-                    table_rows.append(avg_row)
-                
-                # Display table
-                if table_rows:
-                    table_df = pd.DataFrame(table_rows)
-                    st.dataframe(table_df, width='stretch', hide_index=True)
+    elif current_page == "🔮 Coming Soon":
+        coming_soon_page()
 
     # Footer
     st.markdown(
