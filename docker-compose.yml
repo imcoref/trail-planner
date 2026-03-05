@@ -1,18 +1,18 @@
 
 
 services:
-  trail-weather:
+  trail-planner:
     build: .
-    container_name: trail-weather
+    container_name: trail-planner
     restart: always
     ports:
       - "127.0.0.1:8501:8501"
     volumes:
       # Persist the API response cache
-      - trail-weather-cache:/app/.cache
+      - trail-planner-cache:/app/.cache
       # Persist uploaded custom trails (SQLite DB)
-      - trail-weather-uploads:/app/uploads
+      - trail-planner-uploads:/app/uploads
 
 volumes:
-  trail-weather-cache:
-  trail-weather-uploads:
+  trail-planner-cache:
+  trail-planner-uploads:
