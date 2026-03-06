@@ -754,7 +754,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
                 st.info("Elevation profile not available for uploaded trails")
 
 
-def coming_soon_page():
+def coming_soon_page(route_df=None):
     """Page 3: Spot Weather – click on a map to fetch weather for any location."""
 
     st.title("📍 Spot Weather")
@@ -818,6 +818,20 @@ def coming_soon_page():
     m = folium.Map(location=center, zoom_start=zoom)
     folium.TileLayer("OpenTopoMap").add_to(m)
     folium.TileLayer("OpenStreetMap").add_to(m)
+
+    # Add trail route
+    if route_df is not None and not route_df.empty:
+        step = max(1, len(route_df) // 800)
+        subset = route_df.iloc[::step]
+        route_coords = list(zip(subset["latitude"], subset["longitude"]))
+        folium.PolyLine(route_coords, weight=4, color="#eb25d1", opacity=1).add_to(m)
+        # Fit map to trail if no click yet
+        if not last_click:
+            m.fit_bounds([
+                [route_df["latitude"].min(), route_df["longitude"].min()],
+                [route_df["latitude"].max(), route_df["longitude"].max()],
+            ])
+
     folium.LayerControl().add_to(m)
 
     # Add marker at last clicked position

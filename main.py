@@ -477,7 +477,7 @@ def main():
             timezone=timezone
         )
     elif current_page == "📍 Spot Weather":
-        coming_soon_page()
+        coming_soon_page(route_df=route_df)
 
     # Footer
     st.markdown(

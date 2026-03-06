@@ -15,3 +15,5 @@ __pycache__/elevation_utils.cpython-313.pyc
 .cache.sqlite
 .DS_Store
 .venv/
+*.pyc
+__pycache__/
