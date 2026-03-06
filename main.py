@@ -10,7 +10,6 @@ Features:
   - Wind speed + gusts charts
   - Daylight / sunrise-sunset hours
   - Danger alerts (freezing, extreme heat, storms, high wind)
-  - GPX file upload for custom trails
   - Year-over-year comparison
   - Share via URL parameters
   - CSV export
@@ -34,8 +33,6 @@ from charts import (
     build_sunrise_sunset_chart, build_weather_summary_chart, build_elevation_profile,
     build_year_comparison_chart,
 )
-from gpx_upload import process_gpx_upload
-from trail_db import save_trail, list_saved_trails, load_trail, delete_trail
 from elevation_utils import (
     load_elevation_profile, get_segment_elevation_stats,
     plan_thru_hike, get_thru_hike_summary, recalculate_day_stats,
@@ -137,7 +134,6 @@ def init_session_state():
         "last_unit_system": None,
         "last_nobo": None,
         "last_trail": None,
-        "uploaded_trail": None,
         "comparison_df": None,
         "thru_hike_days": None,
         "unit_system": "Metric",
@@ -287,7 +283,6 @@ def main():
     # ═══════════════════════════════════════════════════════════════
 
     # Trail Selector
-    use_upload = False
     trail_options = {k: f"{v['emoji']} {v['name']}" for k, v in available_trails.items()}
 
     if available_trails:
@@ -318,26 +313,15 @@ def main():
         has_emblem = False
         emblem_path = None
 
-    # Determine data source: uploaded trail or built-in
-    if st.session_state.uploaded_trail:
-        use_upload = True
-        upl = st.session_state.uploaded_trail
-        trail_name_display = f"📤 {upl['trail_name']}"
-        timezone = "UTC"
-        if st.sidebar.button("❌ Clear Active Upload"):
-            st.session_state.uploaded_trail = None
-            st.session_state.mm_weather_df = None
-            st.session_state.mm_range_coords = None
-            st.rerun()
-    elif trail_meta:
+    if trail_meta:
         trail_name_display = f"{trail_meta['emoji']} {trail_meta['name']}"
         timezone = trail_meta["timezone"]
     else:
-        st.error("❌ No trail data available. Upload a GPX file or add trail CSVs.")
+        st.error("❌ No trail data available. Add trail CSVs to the data directory.")
         return
 
     # Reset weather data when trail changes
-    if not use_upload and selected_trail != st.session_state.last_trail:
+    if selected_trail != st.session_state.last_trail:
         st.session_state.mm_weather_df = None
         st.session_state.mm_range_coords = None
         st.session_state.comparison_df = None
@@ -410,10 +394,7 @@ def main():
             st.session_state.show_mm = show_mm_new
             st.rerun()
     with col4:
-        if not use_upload and trail_files:
-            has_poi = os.path.isfile(trail_files["poi"])
-        else:
-            has_poi = False
+        has_poi = trail_files and os.path.isfile(trail_files["poi"])
         show_poi_new = st.checkbox("POIs", value=st.session_state.show_poi, disabled=not has_poi)
         if show_poi_new != st.session_state.show_poi:
             st.session_state.show_poi = show_poi_new
@@ -440,20 +421,14 @@ def main():
 
     # Load trail data (needed by all pages)
     nobo = st.session_state.direction == "NOBO"
-    
-    if use_upload:
-        upl = st.session_state.uploaded_trail
-        route_df = upl["trackpoints_df"]
-        mm_df = upl["mm_nobo_df"] if nobo else upl["mm_sobo_df"]
-    else:
-        route_df = load_csv(trail_files["trackpoints"])
-        mm_file = trail_files["mm_nobo"] if nobo else trail_files["mm_sobo"]
-        mm_df = load_csv(mm_file)
+    route_df = load_csv(trail_files["trackpoints"])
+    mm_file = trail_files["mm_nobo"] if nobo else trail_files["mm_sobo"]
+    mm_df = load_csv(mm_file)
 
     mm_options = mm_df["mile_marker"].tolist()
 
-    # Apply URL params (only for built-in trails)
-    if not use_upload and available_trails:
+    # Apply URL params
+    if available_trails:
         apply_url_params(available_trails, mm_options)
 
     # Route to appropriate page
@@ -461,7 +436,6 @@ def main():
         thru_hike_planner_page(
             selected_trail=selected_trail,
             trail_meta=trail_meta,
-            use_upload=use_upload,
             route_df=route_df,
             mm_df=mm_df,
             mm_options=mm_options
@@ -470,7 +444,6 @@ def main():
         history_weather_page(
             selected_trail=selected_trail,
             trail_meta=trail_meta,
-            use_upload=use_upload,
             route_df=route_df,
             mm_df=mm_df,
             mm_options=mm_options,

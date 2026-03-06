@@ -23,7 +23,7 @@ from elevation_utils import (
 )
 
 
-def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_df, mm_options):
+def thru_hike_planner_page(selected_trail, trail_meta, route_df, mm_df, mm_options):
     """Page 1: Thru-Hike Planner with all controls and visualization"""
     
     st.title("🥾 Thru-Hike Planner")
@@ -43,7 +43,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     rain_unit = "mm" if is_metric else "in"
     snow_unit = "cm" if is_metric else "in"
     
-    trail_files = get_trail_files(selected_trail) if not use_upload else None
+    trail_files = get_trail_files(selected_trail)
     
     # ═══ Control Section ═══
     st.markdown(
@@ -104,7 +104,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     ]
     
     # Get elevation stats
-    if not use_upload and selected_trail:
+    if selected_trail:
         seg_stats = get_segment_elevation_stats(selected_trail, direction)
         if seg_stats is not None:
             seg_stats = seg_stats[
@@ -476,7 +476,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     # Map
     st.markdown('<p class="section-header">🗺️ Trail Map</p>', unsafe_allow_html=True)
     poi_df = None
-    if not use_upload and trail_files and show_poi:
+    if trail_files and show_poi:
         poi_file = trail_files["poi"]
         if os.path.isfile(poi_file):
             poi_df = pd.read_csv(poi_file)
@@ -487,7 +487,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     # Calculate range coordinates for the selected mile marker range
     mm_range_coords = calculate_range_coords(route_df, mm_df, start_mm, end_mm)
     
-    trail_files_main = get_trail_files(selected_trail) if not use_upload else None
+    trail_files_main = get_trail_files(selected_trail)
     emblem_path = trail_files_main["emblem"] if trail_files_main else None
     has_emblem = emblem_path and os.path.isfile(emblem_path)
     
@@ -505,7 +505,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
     st_folium(m, use_container_width=True, height=600, returned_objects=[])
     
     # Elevation Profile
-    if not use_upload and selected_trail:
+    if selected_trail:
         elev_df = load_elevation_profile(selected_trail)
         if elev_df is not None:
             st.markdown('<p class="section-header">📈 Elevation Profile</p>', unsafe_allow_html=True)
@@ -514,7 +514,7 @@ def thru_hike_planner_page(selected_trail, trail_meta, use_upload, route_df, mm_
                 st.plotly_chart(elev_chart, width='stretch')
 
 
-def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df, mm_options, timezone):
+def history_weather_page(selected_trail, trail_meta, route_df, mm_df, mm_options, timezone):
     """Page 2: Historical Weather Data"""
     
     st.title("🌤️ Historical Weather Data")
@@ -716,7 +716,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
             route_coords = simplify_route(route_df)
             
             # Get POI data if available
-            trail_files = get_trail_files(selected_trail) if not use_upload else None
+            trail_files = get_trail_files(selected_trail)
             poi_df = None
             if trail_files and st.session_state.show_poi:
                 poi_file = trail_files["poi"]
@@ -741,7 +741,7 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
         
         with col_elev:
             st.markdown("#### 📈 Elevation Profile")
-            if not use_upload and selected_trail:
+            if selected_trail:
                 from elevation_utils import load_elevation_profile
                 elev_df = load_elevation_profile(selected_trail)
                 if elev_df is not None:
@@ -750,8 +750,6 @@ def history_weather_page(selected_trail, trail_meta, use_upload, route_df, mm_df
                         st.plotly_chart(elev_chart, width="stretch")
                 else:
                     st.info("No elevation data available")
-            else:
-                st.info("Elevation profile not available for uploaded trails")
 
 
 def coming_soon_page(route_df=None):

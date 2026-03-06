@@ -1,10 +1,9 @@
 """
 Trail Weather App – Configuration
-Defines available trails, supports uploaded custom trails.
+Defines available trails.
 """
 
 import os
-import tempfile
 
 # ─── Available Trails ────────────────────────────────────────────────
 
@@ -37,7 +36,6 @@ TRAILS = {
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "trail_weather_uploads")
 
 
 def get_trail_files(trail_key: str) -> dict:

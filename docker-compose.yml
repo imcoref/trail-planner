@@ -10,9 +10,6 @@ services:
     volumes:
       # Persist the API response cache
       - trail-planner-cache:/app/.cache
-      # Persist uploaded custom trails (SQLite DB)
-      - trail-planner-uploads:/app/uploads
 
 volumes:
   trail-planner-cache:
-  trail-planner-uploads:
