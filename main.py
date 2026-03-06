@@ -137,7 +137,7 @@ def init_session_state():
         "comparison_df": None,
         "thru_hike_days": None,
         "unit_system": "Metric",
-        "show_mm": True,
+        "show_mm": False,
         "show_poi": False,
         "reset_mm_range": False,
         "direction": "NOBO",
