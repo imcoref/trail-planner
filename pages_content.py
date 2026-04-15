@@ -11,7 +11,7 @@ from datetime import timedelta, date as Date
 from streamlit_folium import st_folium
 
 from config import get_trail_files
-from weather_api import fetch_weather, process_weather_responses
+from weather_api import fetch_weather, fetch_forecast, process_weather_responses
 from map_builder import build_trail_map, calculate_range_coords
 from charts import (
     build_elevation_profile, build_temperature_chart, build_precipitation_chart,
@@ -621,6 +621,223 @@ def history_weather_page(selected_trail, trail_meta, route_df, mm_df, mm_options
             options=chart_options,
             index=0,
             key="history_chart_date_select"
+        )
+        
+        # Determine chart data based on selection
+        if selected_chart_date == "All Days":
+            chart_data = weather_df.copy()
+            chart_date_label = None
+        else:
+            # Find the matching date
+            matching_date = [d for d, label in date_labels.items() if label == selected_chart_date][0]
+            chart_data = weather_df[weather_df["Date"] == matching_date].copy()
+            chart_date_label = matching_date
+        
+        chart_data = chart_data.sort_values("Mile Marker").reset_index(drop=True)
+        
+        # Display charts for selected date
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            temp_chart = build_temperature_chart(chart_data, temp_symbol, chart_date_label)
+            if temp_chart:
+                st.plotly_chart(temp_chart, width="stretch")
+            
+            precip_chart = build_precipitation_chart(chart_data, chart_date_label, rain_unit, snow_unit)
+            if precip_chart:
+                st.plotly_chart(precip_chart, width="stretch")
+        
+        with col_chart2:
+            wind_chart = build_wind_chart(chart_data, chart_date_label, wind_unit)
+            if wind_chart:
+                st.plotly_chart(wind_chart, width="stretch")
+            
+            sunrise_chart = build_sunrise_sunset_chart(chart_data, chart_date_label)
+            if sunrise_chart:
+                st.plotly_chart(sunrise_chart, width="stretch")
+        
+        if selected_chart_date == "All Days":
+            summary_chart = build_weather_summary_chart(weather_df)
+            if summary_chart:
+                st.plotly_chart(summary_chart, width="stretch")
+        
+        # Data tables per date
+        for date in dates:
+            date_str = date_labels[date]
+            
+            with st.expander(f"📅 {date_str}", expanded=False):
+                # Filter data for this date
+                day_data = weather_df[weather_df["Date"] == date].copy()
+                
+                if day_data.empty:
+                    st.info("No data available")
+                    continue
+                
+                # Sort by mile marker
+                day_data = day_data.sort_values("Mile Marker").reset_index(drop=True)
+                
+                # Create table with Mile Markers as rows
+                temp_max_col = f"Temp Max ({temp_symbol})"
+                temp_min_col = f"Temp Min ({temp_symbol})"
+                rain_col = f"Rain ({rain_unit})"
+                snow_col = f"Snow ({snow_unit})"
+                wind_col = f"💨 Wind Max ({wind_unit})"
+                gust_col = f"💨 Gusts ({wind_unit})"
+                
+                table_data = {
+                    "MM": day_data["Mile Marker"].apply(lambda x: f"{x:.1f}"),
+                    temp_max_col: day_data[temp_max_col].apply(lambda x: f"{x:.1f}"),
+                    temp_min_col: day_data[temp_min_col].apply(lambda x: f"{x:.1f}"),
+                    rain_col: day_data[rain_col].apply(lambda x: f"{x:.1f}"),
+                    snow_col: day_data[snow_col].apply(lambda x: f"{x:.1f}"),
+                    wind_col: day_data[wind_col].apply(lambda x: f"{x:.1f}"),
+                    gust_col: day_data[gust_col].apply(lambda x: f"{x:.1f}"),
+                    "🌅 Sunrise": day_data["🌅 Sunrise"],
+                    "🌇 Sunset": day_data["🌇 Sunset"],
+                    "☀️ Daylight": day_data["☀️ Daylight (h)"].apply(lambda x: f"{x:.1f}h"),
+                    "Weather": day_data["Weather"],
+                }
+                
+                display_df = pd.DataFrame(table_data)
+                st.dataframe(display_df, width='stretch', hide_index=True)
+        
+        # Map and Elevation Profile
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">🗺️ Trail Map & 📈 Elevation Profile</p>', unsafe_allow_html=True)
+        
+        col_map, col_elev = st.columns([1, 1])
+        
+        with col_map:
+            st.markdown("#### 🗺️ Map")
+            # Calculate range coordinates
+            mm_range_coords = calculate_range_coords(route_df, mm_df, start_mm, end_mm)
+            
+            from main import simplify_route
+            route_coords = simplify_route(route_df)
+            
+            # Get POI data if available
+            trail_files = get_trail_files(selected_trail)
+            poi_df = None
+            if trail_files and st.session_state.show_poi:
+                poi_file = trail_files["poi"]
+                if os.path.isfile(poi_file):
+                    poi_df = pd.read_csv(poi_file)
+            
+            emblem_path = trail_files["emblem"] if trail_files else None
+            has_emblem = emblem_path and os.path.isfile(emblem_path)
+            
+            m = build_trail_map(
+                route_df=route_df,
+                mm_range_coords=mm_range_coords,
+                mm_df=mm_df,
+                show_mm=st.session_state.show_mm,
+                direction=direction,
+                poi_df=poi_df,
+                show_poi=st.session_state.show_poi,
+                emblem_image=emblem_path if has_emblem else None,
+                route_coords=route_coords,
+            )
+            st_folium(m, use_container_width=True, height=500, returned_objects=[])
+        
+        with col_elev:
+            st.markdown("#### 📈 Elevation Profile")
+            if selected_trail:
+                from elevation_utils import load_elevation_profile
+                elev_df = load_elevation_profile(selected_trail)
+                if elev_df is not None:
+                    elev_chart = build_elevation_profile(elev_df, mm_df, start_mm, end_mm)
+                    if elev_chart:
+                        st.plotly_chart(elev_chart, width="stretch")
+                else:
+                    st.info("No elevation data available")
+
+
+def forecast_weather_page(selected_trail, trail_meta, route_df, mm_df, mm_options, timezone):
+    """Page: Forecast Weather Data"""
+    
+    st.title("🌤️ Forecast Weather Data")
+    st.caption("View forecast weather patterns for your selected trail segment.")
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    
+    # Get settings
+    unit_system = st.session_state.unit_system
+    is_metric = unit_system == "Metric"
+    temperature_unit = "celsius" if is_metric else "fahrenheit"
+    temp_symbol = "°C" if is_metric else "°F"
+    wind_unit = "km/h" if is_metric else "mph"
+    rain_unit = "mm" if is_metric else "in"
+    snow_unit = "cm" if is_metric else "in"
+    direction = st.session_state.direction
+    
+    # Controls
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("### 📏 Mile Marker Range")
+        if "start_mm_forecast" not in st.session_state:
+            st.session_state.start_mm_forecast = mm_options[0]
+        if "end_mm_forecast" not in st.session_state:
+            st.session_state.end_mm_forecast = mm_options[-1]
+        start_mm = st.selectbox("Start MM", mm_options, key="start_mm_forecast")
+        end_mm = st.selectbox("End MM", mm_options, key="end_mm_forecast")
+        if start_mm > end_mm:
+            start_mm, end_mm = end_mm, start_mm
+        st.caption(f"📐 {end_mm - start_mm:.0f} miles")
+    
+    with col2:
+        st.markdown("### 📅 Forecast Days")
+        forecast_days = st.selectbox("Days", [3, 5, 7, 10], index=2, key="forecast_days")
+    
+    with col3:
+        st.markdown("### 🌤️")
+        # Placeholder for future options
+    
+    selected_points = mm_df[
+        (mm_df["mile_marker"] >= start_mm) & (mm_df["mile_marker"] <= end_mm)
+    ]
+    
+    # Load Forecast Button
+    if st.button("⚡ Load Forecast Weather", type="primary", key="load_weather_forecast"):
+        with st.spinner("🌤️ Loading forecast data..."):
+            latitudes = selected_points["latitude"].tolist()
+            longitudes = selected_points["longitude"].tolist()
+            mile_markers = selected_points["mile_marker"].tolist()
+            
+            wind_speed_unit_api = "kmh" if is_metric else "mph"
+            
+            try:
+                responses = fetch_forecast(
+                    latitudes, longitudes, temperature_unit, timezone, wind_speed_unit_api, forecast_days,
+                )
+                weather_df = process_weather_responses(
+                    responses, mile_markers, latitudes, longitudes, temp_symbol, timezone,
+                    wind_unit, rain_unit, snow_unit,
+                )
+                
+                st.session_state.weather_forecast_df = weather_df
+                st.success(f"✓ Forecast data loaded for {len(mile_markers)} mile markers!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Could not load forecast data: {str(e)}")
+    
+    # Display forecast data by date
+    if st.session_state.get("weather_forecast_df") is not None:
+        weather_df = st.session_state.weather_forecast_df
+        
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">📊 Forecast Data by Date</p>', unsafe_allow_html=True)
+        
+        # Group by date
+        dates = sorted(weather_df["Date"].unique())
+        
+        # Dropdown for chart date selection
+        date_labels = {d: pd.to_datetime(d).strftime('%A, %d.%m.%Y') for d in dates}
+        chart_options = ["All Days"] + [date_labels[d] for d in dates]
+        selected_chart_date = st.selectbox(
+            "📅 Select date for charts",
+            options=chart_options,
+            index=0,
+            key="forecast_chart_date_select"
         )
         
         # Determine chart data based on selection

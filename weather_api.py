@@ -86,6 +86,37 @@ def fetch_weather(latitudes, longitudes, start_date, end_date, temp_unit, timezo
     return openmeteo.weather_api(url, params=params)
 
 
+def fetch_forecast(latitudes, longitudes, temp_unit, timezone, wind_speed_unit="kmh", forecast_days=7):
+    """Fetch forecast weather data from Open-Meteo Forecast API."""
+    url = "https://api.open-meteo.com/v1/forecast"
+    cache_session = requests_cache.CachedSession(".cache", expire_after=3600)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    openmeteo = openmeteo_requests.Client(session=retry_session)
+
+    params = {
+        "latitude": latitudes,
+        "longitude": longitudes,
+        "daily": [
+            "weather_code",            # 0
+            "temperature_2m_max",      # 1
+            "temperature_2m_min",      # 2
+            "rain_sum",                # 3
+            "snowfall_sum",            # 4
+            "precipitation_hours",     # 5
+            "sunrise",                 # 6  (int64 unix ts)
+            "sunset",                  # 7  (int64 unix ts)
+            "daylight_duration",       # 8
+            "wind_speed_10m_max",      # 9
+            "wind_gusts_10m_max",      # 10
+        ],
+        "temperature_unit": temp_unit,
+        "wind_speed_unit": wind_speed_unit,
+        "timezone": timezone,
+        "forecast_days": forecast_days,
+    }
+    return openmeteo.weather_api(url, params=params)
+
+
 def process_weather_responses(responses, mile_markers, latitudes, longitudes, temp_symbol, timezone="UTC",
                                wind_unit="km/h", rain_unit="mm", snow_unit="cm"):
     """Process raw API responses into a formatted DataFrame with all weather data.

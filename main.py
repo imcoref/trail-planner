@@ -37,7 +37,7 @@ from elevation_utils import (
     load_elevation_profile, get_segment_elevation_stats,
     plan_thru_hike, get_thru_hike_summary, recalculate_day_stats,
 )
-from pages_content import thru_hike_planner_page, history_weather_page, coming_soon_page
+from pages_content import thru_hike_planner_page, history_weather_page, forecast_weather_page, coming_soon_page
 
 
 # ─── Page Config ───────────────────────────────────────────────────
@@ -349,6 +349,7 @@ def main():
     page_options = [
         "🥾 Thru-Hike Planner",
         "📊 History Weather",
+        "🌤️ Forecast Weather",
         "📍 Spot Weather"
     ]
     current_page = st.sidebar.radio(
@@ -442,6 +443,15 @@ def main():
         )
     elif current_page == "📊 History Weather":
         history_weather_page(
+            selected_trail=selected_trail,
+            trail_meta=trail_meta,
+            route_df=route_df,
+            mm_df=mm_df,
+            mm_options=mm_options,
+            timezone=timezone
+        )
+    elif current_page == "🌤️ Forecast Weather":
+        forecast_weather_page(
             selected_trail=selected_trail,
             trail_meta=trail_meta,
             route_df=route_df,
